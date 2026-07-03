@@ -689,15 +689,12 @@ const autogenEventId = Tone.Transport.scheduleRepeat((time) => {
 
 function generateRandomPattern() {
   if (isAudioInitialized && Tone.Transport.state === 'started') {
-    // Adapt fade duration to BPM so it feels like a musical breath
-    const beatMs = (60000 / Tone.Transport.bpm.value) * 0.5;
-    const fadeMs = Math.min(Math.max(beatMs, 60), 350);
     const savedVol = Tone.Destination.volume.value;
-    Tone.Destination.volume.rampTo(-80, fadeMs / 1000);
+    Tone.Destination.volume.rampTo(-80, 0.06);
     window.setTimeout(() => {
       _buildPattern();
-      window.setTimeout(() => Tone.Destination.volume.rampTo(savedVol, (fadeMs * 1.2) / 1000), 30);
-    }, fadeMs + 20);
+      window.setTimeout(() => Tone.Destination.volume.rampTo(savedVol, 0.08), 20);
+    }, 70);
   } else {
     _buildPattern();
   }
