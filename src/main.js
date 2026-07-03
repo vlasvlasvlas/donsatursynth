@@ -186,27 +186,26 @@ function createVoiceForPreset(p) {
     synth.connect(cookieBus);
   }
 
-  // Minimum note duration: note must last at least through the attack phase
   const attackTime = p.options?.envelope?.attack ?? 0.01;
+  const releaseTime = p.options?.envelope?.release ?? 0.5;
   const minDuration = Math.max(0.05, attackTime + 0.02);
+  // Wait long enough for the natural release tail + Tone lookahead to finish
+  const disposeAfterMs = Math.ceil((releaseTime + 0.5) * 1000);
 
   return {
     synth,
     minDuration,
     dispose() {
-      // Disconnect immediately to silence already-scheduled (lookahead) notes
-      try { if (filter) filter.disconnect(); else synth.disconnect(); } catch (_) {}
-      // Release cleanly (now inaudible, but frees DSP resources gracefully)
-      try {
-        const releaseAt = Tone.now() + 0.05;
-        if (typeof synth.releaseAll === 'function') synth.releaseAll(releaseAt);
-        else if (typeof synth.triggerRelease === 'function') synth.triggerRelease(releaseAt);
-      } catch (_) {}
-      // Defer full disposal so the release DSP finishes
+      // Do NOT disconnect immediately. Let already-scheduled notes and
+      // in-flight envelopes decay through their natural release —
+      // any hard disconnect mid-sound is an amplitude jump = click,
+      // and killing lookahead notes creates the audible loop gap.
       window.setTimeout(() => {
+        try { synth.disconnect(); } catch (_) {}
+        if (filter) { try { filter.disconnect(); } catch (_) {} }
         try { synth.dispose(); } catch (_) {}
         if (filter) { try { filter.dispose(); } catch (_) {} }
-      }, 300);
+      }, disposeAfterMs);
     }
   };
 }
