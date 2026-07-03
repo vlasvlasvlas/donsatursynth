@@ -317,8 +317,8 @@ function retuneActiveDrones() {
 }
 
 function setPlayButtonState(isPlaying) {
-  btnPlay.textContent = isPlaying ? '⏸' : '▶';
-  btnPlay.setAttribute('aria-label', isPlaying ? 'Pausar' : 'Play');
+  btnPlay.textContent = isPlaying ? '⏹' : '▶';
+  btnPlay.setAttribute('aria-label', isPlaying ? 'Stop' : 'Play');
   btnPlay.classList.toggle('is-playing', isPlaying);
 }
 
@@ -454,12 +454,14 @@ btnPlay.addEventListener('click', async () => {
   }
 
   if (Tone.Transport.state === 'started') {
-    Tone.Transport.pause();
+    // Stop (not pause) resets the clock to zero — prevents desync on restart
+    Tone.Transport.stop();
+    clearPendingVisuals();
     releaseActiveDrones();
-    clearDrumPlayingIndicators();
+    currentStep = 0;
     setPlayButtonState(false);
   } else {
-    Tone.Transport.start();
+    Tone.Transport.start('+0.05'); // small offset lets the context catch up
     syncActiveDrones();
     setPlayButtonState(true);
   }
@@ -580,7 +582,7 @@ autogenCheckbox.addEventListener('change', async (e) => {
     if (Tone.Transport.state !== 'started') {
       try {
         if (!isAudioInitialized) await initAudio();
-        Tone.Transport.start();
+        Tone.Transport.start('+0.05');
         syncActiveDrones();
         setPlayButtonState(true);
       } catch (err) {
@@ -958,7 +960,7 @@ document.getElementById('btn-generate-manual').addEventListener('click', async (
   try {
     if (!isAudioInitialized) await initAudio();
     if (Tone.Transport.state !== 'started') {
-      Tone.Transport.start();
+      Tone.Transport.start('+0.05');
       syncActiveDrones();
       setPlayButtonState(true);
     }
