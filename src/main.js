@@ -16,6 +16,7 @@ const bpmVal = document.getElementById('bpm-val');
 const presetSelect = document.getElementById('preset-select');
 const rootNoteSelect = document.getElementById('root-note-select');
 const masterVolSlider = document.getElementById('master-vol-slider');
+const cookieVolSlider = document.getElementById('cookie-vol-slider');
 const beatVolSlider = document.getElementById('beat-vol-slider');
 const btnPlay = document.getElementById('btn-play');
 const directionSelect = document.getElementById('direction-select');
@@ -41,25 +42,39 @@ const cookieVoices = new Map();
 const activeDroneNotes = new Map();
 let selectedCookie = null;
 
-// Master FX & Compression
-const masterReverb = new Tone.Reverb({ decay: 2.5, wet: 0.3 }).toDestination();
-const masterCompressor = new Tone.Compressor(-20, 3).connect(masterReverb);
+// Helper: slider dB value → audio param (-80 or lower = true silence)
+function sliderDb(rawValue) {
+  const v = parseFloat(rawValue);
+  return v <= -79 ? -Infinity : v;
+}
 
-// New Synths for Drone and Beat
+// Master FX chain: independent buses → Compressor → Reverb → Limiter → Destination
+const masterLimiter = new Tone.Limiter(-3).toDestination();
+const masterReverb = new Tone.Reverb({ decay: 2.0, wet: 0.18 }).connect(masterLimiter);
+const masterCompressor = new Tone.Compressor(-24, 4).connect(masterReverb);
+
+// Independent volume buses — adjusting one never affects the others
+const cookieBus = new Tone.Volume(sliderDb(cookieVolSlider.value)).connect(masterCompressor);
+const droneBus = new Tone.Volume(-10).connect(masterCompressor);
+const drumBus = new Tone.Volume(sliderDb(beatVolSlider.value)).connect(masterCompressor);
+
+Tone.Destination.volume.value = sliderDb(masterVolSlider.value);
+
+// Drone synth routed through its own bus
 const droneSynth = new Tone.PolySynth(Tone.Synth, {
   oscillator: { type: "sine" },
   envelope: { attack: 2, decay: 1, sustain: 1, release: 4 }
-}).connect(masterCompressor);
-droneSynth.volume.value = -10;
+}).connect(droneBus);
 
-const drumVol = new Tone.Volume(parseFloat(beatVolSlider.value)).connect(masterCompressor);
+// Kept for legacy compatibility (drumBus replaces this)
+const drumVol = drumBus;
 
 const DRUM_POOL_SIZE = 8;
 
 function createDrumVoice(track) {
-  if (track === 'kick') return new Tone.MembraneSynth().connect(drumVol);
-  if (track === 'snare') return new Tone.NoiseSynth().connect(drumVol);
-  return new Tone.MetalSynth().connect(drumVol);
+  if (track === 'kick') return new Tone.MembraneSynth().connect(drumBus);
+  if (track === 'snare') return new Tone.NoiseSynth().connect(drumBus);
+  return new Tone.MetalSynth().connect(drumBus);
 }
 
 const drumVoices = {
@@ -97,20 +112,21 @@ setDrumKit('808');
 
 document.getElementById('drum-kit-select').addEventListener('change', (e) => setDrumKit(e.target.value));
 
-Tone.Destination.volume.value = parseFloat(masterVolSlider.value);
 Tone.Transport.bpm.value = parseInt(bpmSlider.value, 10);
 
 // Root Note Logic
 let rootNoteStr = "C";
 const scaleIntervals = [0, 3, 5, 7, 10]; // C Minor Pentatonic intervals
 
-function getNoteFromIndex(index) {
-  const rootFreq = Tone.Frequency(rootNoteStr + "3").toMidi(); 
+function getNoteFromIndex(index, cookieType = null) {
+  const rootFreq = Tone.Frequency(rootNoteStr + "3").toMidi();
   const octaveShift = Math.floor(index / 5);
   let scaleDegree = index % 5;
   if (scaleDegree < 0) scaleDegree += 5;
   const interval = scaleIntervals[scaleDegree];
-  return Tone.Frequency(rootFreq + (octaveShift * 12) + interval, "midi").toNote();
+  // Negrita always plays one octave lower → clear bass vs melody separation
+  const typeOffset = cookieType === 'negrito' ? -12 : 0;
+  return Tone.Frequency(rootFreq + (octaveShift * 12) + interval + typeOffset, "midi").toNote();
 }
 
 function populatePresetSelect() {
@@ -164,22 +180,30 @@ function createVoiceForPreset(p) {
     if (p.filter.Q) filter.Q.value = p.filter.Q;
     if (p.filter.rolloff) filter.rolloff = p.filter.rolloff;
     synth.connect(filter);
-    filter.connect(masterCompressor);
+    filter.connect(cookieBus);
   } else {
-    synth.connect(masterCompressor);
+    synth.connect(cookieBus);
   }
+
+  // Minimum note duration: note must last at least through the attack phase
+  const attackTime = p.options?.envelope?.attack ?? 0.01;
+  const minDuration = Math.max(0.05, attackTime + 0.02);
+
   return {
     synth,
+    minDuration,
     dispose() {
+      // Release with small look-ahead so the envelope fades cleanly (no click)
+      const releaseAt = Tone.now() + 0.05;
       try {
-        const releaseTime = Tone.now();
-        if (typeof synth.releaseAll === 'function') synth.releaseAll(releaseTime);
-        else if (typeof synth.triggerRelease === 'function') synth.triggerRelease(releaseTime);
-      } catch (_) {
-        // Some Tone instruments cannot release once already disposed or idle.
-      }
-      synth.dispose();
-      if (filter) filter.dispose();
+        if (typeof synth.releaseAll === 'function') synth.releaseAll(releaseAt);
+        else if (typeof synth.triggerRelease === 'function') synth.triggerRelease(releaseAt);
+      } catch (_) {}
+      // Defer actual disposal so the release tail fades before the node is removed
+      window.setTimeout(() => {
+        try { synth.dispose(); } catch (_) {}
+        if (filter) { try { filter.dispose(); } catch (_) {} }
+      }, 250);
     }
   };
 }
@@ -407,8 +431,11 @@ const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
     if (presetId) {
       const voice = ensureCookieVoice(cookie);
       if (!voice) return;
-      const note = getNoteFromIndex(r);
-      voice.synth.triggerAttackRelease(note, subdivisionSeconds("8n", time), time);
+      const note = getNoteFromIndex(r, cookie.dataset.type);
+      // Clamp duration so the attack phase always completes (prevents mid-attack clicks)
+      const stepDur = subdivisionSeconds("8n", time);
+      const noteDur = Math.max(stepDur, voice.minDuration ?? stepDur);
+      voice.synth.triggerAttackRelease(note, noteDur, time);
     }
   });
   } finally {
@@ -444,15 +471,17 @@ bpmSlider.addEventListener('input', (e) => {
   Tone.Transport.bpm.value = bpm;
 });
 masterVolSlider.addEventListener('input', (e) => {
-  Tone.Destination.volume.value = parseFloat(e.target.value);
+  Tone.Destination.volume.value = sliderDb(e.target.value);
+});
+cookieVolSlider.addEventListener('input', (e) => {
+  cookieBus.volume.value = sliderDb(e.target.value);
 });
 const droneVolSlider = document.getElementById('drone-vol-slider');
 droneVolSlider.addEventListener('input', (e) => {
-  droneSynth.volume.value = parseFloat(e.target.value);
+  droneBus.volume.value = sliderDb(e.target.value);
 });
-
 beatVolSlider.addEventListener('input', (e) => {
-  drumVol.volume.value = parseFloat(e.target.value);
+  drumBus.volume.value = sliderDb(e.target.value);
 });
 rootNoteSelect.addEventListener('change', (e) => {
   rootNoteStr = e.target.value;
@@ -577,17 +606,60 @@ const autogenEventId = Tone.Transport.scheduleRepeat((time) => {
 }, "1m"); // every 1 measure (compás)
 
 function generateRandomPattern() {
+  // Brief master fade prevents clicks from abrupt synth disposal
+  if (isAudioInitialized && Tone.Transport.state === 'started') {
+    const savedVol = Tone.Destination.volume.value;
+    Tone.Destination.volume.rampTo(-80, 0.06);
+    window.setTimeout(() => {
+      _buildPattern();
+      window.setTimeout(() => Tone.Destination.volume.rampTo(savedVol, 0.08), 20);
+    }, 70);
+  } else {
+    _buildPattern();
+  }
+}
+
+function _buildPattern() {
   clearGrid();
-  
-  const count = Math.min(100, Math.max(1, parseInt(document.getElementById('random-count')?.value, 10) || 30));
+
+  const dir = directionSelect.value;
+  const bars = Math.max(1, parseInt(document.getElementById('autogen-bars')?.value, 10) || 4);
+  const requested = Math.min(100, Math.max(1, parseInt(document.getElementById('random-count')?.value, 10) || 30));
   const types = ['negrito', 'dulce'];
-  
-  addCookieToCanvas(types[Math.floor(Math.random() * types.length)], 0, 0);
-  
-  for (let i = 1; i < count; i++) {
-    const { q, r } = getRandomAdjacentHex();
-    const type = types[Math.floor(Math.random() * types.length)];
-    addCookieToCanvas(type, q, r);
+  const rnd = () => Math.floor(Math.random() * types.length);
+
+  if (dir === 'LR' || dir === 'RL') {
+    // 8 steps per measure → exact column count makes the loop land perfectly
+    const cols = 8 * bars;
+    const density = Math.max(1, Math.round(requested / cols));
+    for (let q = 0; q < cols; q++) {
+      const n = Math.max(0, density + (Math.random() > 0.4 ? 1 : 0) - (Math.random() > 0.6 ? 1 : 0));
+      const usedRows = new Set();
+      for (let i = 0; i < n; i++) {
+        let r, tries = 0;
+        do { r = Math.floor(Math.random() * 7) - 3; tries++; } while (usedRows.has(r) && tries < 12);
+        if (!usedRows.has(r)) { usedRows.add(r); addCookieToCanvas(types[rnd()], q, r); }
+      }
+    }
+  } else if (dir === 'TB' || dir === 'BT') {
+    const rows = 8 * bars;
+    const density = Math.max(1, Math.round(requested / rows));
+    for (let r = 0; r < rows; r++) {
+      const n = Math.max(0, density + (Math.random() > 0.4 ? 1 : 0) - (Math.random() > 0.6 ? 1 : 0));
+      const usedCols = new Set();
+      for (let i = 0; i < n; i++) {
+        let q, tries = 0;
+        do { q = Math.floor(Math.random() * 7) - 3; tries++; } while (usedCols.has(q) && tries < 12);
+        if (!usedCols.has(q)) { usedCols.add(q); addCookieToCanvas(types[rnd()], q, r); }
+      }
+    }
+  } else {
+    // RND: organic adjacent growth
+    addCookieToCanvas(types[rnd()], 0, 0);
+    for (let i = 1; i < requested; i++) {
+      const { q, r } = getRandomAdjacentHex();
+      addCookieToCanvas(types[rnd()], q, r);
+    }
   }
 }
 
@@ -941,9 +1013,12 @@ if (import.meta.hot) {
     disposeAllCookieVoices();
     droneSynth.dispose();
     disposeAllDrumVoices();
-    drumVol.dispose();
+    cookieBus.dispose();
+    droneBus.dispose();
+    drumBus.dispose();
     masterCompressor.dispose();
     masterReverb.dispose();
+    masterLimiter.dispose();
   });
 }
 
