@@ -118,15 +118,13 @@ Tone.Transport.bpm.value = parseInt(bpmSlider.value, 10);
 let rootNoteStr = "C";
 const scaleIntervals = [0, 3, 5, 7, 10]; // C Minor Pentatonic intervals
 
-function getNoteFromIndex(index, cookieType = null) {
+function getNoteFromIndex(index) {
   const rootFreq = Tone.Frequency(rootNoteStr + "3").toMidi();
   const octaveShift = Math.floor(index / 5);
   let scaleDegree = index % 5;
   if (scaleDegree < 0) scaleDegree += 5;
   const interval = scaleIntervals[scaleDegree];
-  // Negrita always plays one octave lower → clear bass vs melody separation
-  const typeOffset = cookieType === 'negrito' ? -12 : 0;
-  return Tone.Frequency(rootFreq + (octaveShift * 12) + interval + typeOffset, "midi").toNote();
+  return Tone.Frequency(rootFreq + (octaveShift * 12) + interval, "midi").toNote();
 }
 
 function populatePresetSelect() {
@@ -139,6 +137,20 @@ function populatePresetSelect() {
     presetSelect.appendChild(opt);
   });
   if (selectedPreset) presetSelect.value = selectedPreset;
+
+  // Also populate the per-type sound selectors
+  ['negrito-sound-select', 'dulce-sound-select'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '';
+    presets.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+  });
+  syncTypeSoundDropdowns();
 }
 
 async function loadPresets() {
@@ -193,17 +205,19 @@ function createVoiceForPreset(p) {
     synth,
     minDuration,
     dispose() {
-      // Release with small look-ahead so the envelope fades cleanly (no click)
-      const releaseAt = Tone.now() + 0.05;
+      // Disconnect immediately to silence already-scheduled (lookahead) notes
+      try { if (filter) filter.disconnect(); else synth.disconnect(); } catch (_) {}
+      // Release cleanly (now inaudible, but frees DSP resources gracefully)
       try {
+        const releaseAt = Tone.now() + 0.05;
         if (typeof synth.releaseAll === 'function') synth.releaseAll(releaseAt);
         else if (typeof synth.triggerRelease === 'function') synth.triggerRelease(releaseAt);
       } catch (_) {}
-      // Defer actual disposal so the release tail fades before the node is removed
+      // Defer full disposal so the release DSP finishes
       window.setTimeout(() => {
         try { synth.dispose(); } catch (_) {}
         if (filter) { try { filter.dispose(); } catch (_) {} }
-      }, 250);
+      }, 300);
     }
   };
 }
@@ -431,7 +445,7 @@ const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
     if (presetId) {
       const voice = ensureCookieVoice(cookie);
       if (!voice) return;
-      const note = getNoteFromIndex(r, cookie.dataset.type);
+      const note = getNoteFromIndex(r);
       // Clamp duration so the attack phase always completes (prevents mid-attack clicks)
       const stepDur = subdivisionSeconds("8n", time);
       const noteDur = Math.max(stepDur, voice.minDuration ?? stepDur);
@@ -491,6 +505,30 @@ rootNoteSelect.addEventListener('change', (e) => {
 });
 directionSelect.addEventListener('change', () => { currentStep = 0; });
 
+// Cookie count step = bars count, so total is always a multiple of bars
+function updateCookieCountStep() {
+  const barsInput = document.getElementById('autogen-bars');
+  const countInput = document.getElementById('random-count');
+  if (!barsInput || !countInput) return;
+  const bars = Math.max(1, parseInt(barsInput.value, 10) || 4);
+  countInput.step = bars;
+  countInput.min = bars;
+  countInput.max = bars * 16;
+  // Snap current value to nearest multiple of bars
+  const current = parseInt(countInput.value, 10) || bars * 4;
+  countInput.value = Math.max(bars, Math.round(current / bars) * bars);
+}
+document.getElementById('autogen-bars').addEventListener('input', updateCookieCountStep);
+updateCookieCountStep(); // initialise on load
+
+// Type sound selectors
+document.getElementById('negrito-sound-select')?.addEventListener('change', (e) => {
+  typeSounds.negrito = e.target.value;
+});
+document.getElementById('dulce-sound-select')?.addEventListener('change', (e) => {
+  typeSounds.dulce = e.target.value;
+});
+
 // Drone Keyboard Toggles
 document.querySelectorAll('.key-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
@@ -538,6 +576,24 @@ const drumEventId = Tone.Transport.scheduleRepeat((time) => {
     hihat.triggerAttackRelease(hihat.frequency.value, drumDuration, time);
   }
 }, "16n");
+
+// --- TYPE SOUNDS: preset per cookie type ---
+// When a cookie is created or flipped, it gets the preset assigned to its type here
+const typeSounds = {
+  negrito: 'minimoog',
+  dulce: 'vangelis',
+  // Helper: given a random index 0|1, return the type string
+  nextType(idx) { return idx === 0 ? 'negrito' : 'dulce'; },
+  presetFor(type) { return type === 'negrito' ? this.negrito : this.dulce; }
+};
+
+// Sync the dropdowns if they exist (populated after presets load)
+function syncTypeSoundDropdowns() {
+  const negSel = document.getElementById('negrito-sound-select');
+  const dulSel = document.getElementById('dulce-sound-select');
+  if (negSel) negSel.value = typeSounds.negrito;
+  if (dulSel) dulSel.value = typeSounds.dulce;
+}
 
 // --- AUTO GENERATOR LOGIC ---
 const autogenCheckbox = document.getElementById('autogen-checkbox');
@@ -608,17 +664,48 @@ const autogenEventId = Tone.Transport.scheduleRepeat((time) => {
 }, "1m"); // every 1 measure (compás)
 
 function generateRandomPattern() {
-  // Brief master fade prevents clicks from abrupt synth disposal
   if (isAudioInitialized && Tone.Transport.state === 'started') {
+    // Adapt fade duration to BPM so it feels like a musical breath
+    const beatMs = (60000 / Tone.Transport.bpm.value) * 0.5;
+    const fadeMs = Math.min(Math.max(beatMs, 60), 350);
     const savedVol = Tone.Destination.volume.value;
-    Tone.Destination.volume.rampTo(-80, 0.06);
+    Tone.Destination.volume.rampTo(-80, fadeMs / 1000);
     window.setTimeout(() => {
       _buildPattern();
-      window.setTimeout(() => Tone.Destination.volume.rampTo(savedVol, 0.08), 20);
-    }, 70);
+      window.setTimeout(() => Tone.Destination.volume.rampTo(savedVol, (fadeMs * 1.2) / 1000), 30);
+    }, fadeMs + 20);
   } else {
     _buildPattern();
   }
+}
+
+// Biased adjacent hex: organic growth that prefers extending in the sweep direction
+function getAdjacentHexBiased(dirAxis, maxCoord) {
+  if (hexGrid.size === 0) return { q: 0, r: 0 };
+  const directions = [{q:1,r:0},{q:1,r:-1},{q:0,r:-1},{q:-1,r:0},{q:-1,r:1},{q:0,r:1}];
+  const occupied = Array.from(hexGrid.keys()).map(k => {
+    const [q, r] = k.split(',').map(Number);
+    return { q, r };
+  });
+  const currentMax = dirAxis === 'q'
+    ? Math.max(...occupied.map(h => h.q))
+    : Math.max(...occupied.map(h => h.r));
+
+  const candidates = [];
+  for (const hex of occupied) {
+    for (const d of directions) {
+      const nq = hex.q + d.q;
+      const nr = hex.r + d.r;
+      if (hexGrid.has(`${nq},${nr}`)) continue;
+      const coord = dirAxis === 'q' ? nq : nr;
+      if (coord < 0 || coord > maxCoord) continue;
+      // Weight 4× toward advancing the sweep front, 1× otherwise
+      const w = coord > currentMax ? 4 : 1;
+      for (let i = 0; i < w; i++) candidates.push({ q: nq, r: nr });
+    }
+  }
+  if (candidates.length === 0) return getRandomAdjacentHex();
+  return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
 function _buildPattern() {
@@ -626,41 +713,33 @@ function _buildPattern() {
 
   const dir = directionSelect.value;
   const bars = Math.max(1, parseInt(document.getElementById('autogen-bars')?.value, 10) || 4);
-  const requested = Math.min(100, Math.max(1, parseInt(document.getElementById('random-count')?.value, 10) || 30));
-  const types = ['negrito', 'dulce'];
-  const rnd = () => Math.floor(Math.random() * types.length);
+  const rawCount = parseInt(document.getElementById('random-count')?.value, 10) || bars * 4;
+  // Snap to nearest multiple of bars (the musical relationship)
+  const total = Math.max(bars, Math.round(rawCount / bars) * bars);
+  const rnd = () => Math.floor(Math.random() * 2);
 
   if (dir === 'LR' || dir === 'RL') {
-    // 8 steps per measure → exact column count makes the loop land perfectly
-    const cols = 8 * bars;
-    const density = Math.max(1, Math.round(requested / cols));
-    for (let q = 0; q < cols; q++) {
-      const n = Math.max(0, density + (Math.random() > 0.4 ? 1 : 0) - (Math.random() > 0.6 ? 1 : 0));
-      const usedRows = new Set();
-      for (let i = 0; i < n; i++) {
-        let r, tries = 0;
-        do { r = Math.floor(Math.random() * 7) - 3; tries++; } while (usedRows.has(r) && tries < 12);
-        if (!usedRows.has(r)) { usedRows.add(r); addCookieToCanvas(types[rnd()], q, r); }
-      }
+    const maxQ = 8 * bars - 1;
+    addCookieToCanvas(typeSounds.nextType(rnd()), 0, 0);
+    let tries = 0;
+    while (hexGrid.size < total && tries < total * 20) {
+      tries++;
+      addCookieToCanvas(typeSounds.nextType(rnd()), ...Object.values(getAdjacentHexBiased('q', maxQ)));
     }
   } else if (dir === 'TB' || dir === 'BT') {
-    const rows = 8 * bars;
-    const density = Math.max(1, Math.round(requested / rows));
-    for (let r = 0; r < rows; r++) {
-      const n = Math.max(0, density + (Math.random() > 0.4 ? 1 : 0) - (Math.random() > 0.6 ? 1 : 0));
-      const usedCols = new Set();
-      for (let i = 0; i < n; i++) {
-        let q, tries = 0;
-        do { q = Math.floor(Math.random() * 7) - 3; tries++; } while (usedCols.has(q) && tries < 12);
-        if (!usedCols.has(q)) { usedCols.add(q); addCookieToCanvas(types[rnd()], q, r); }
-      }
+    const maxR = 8 * bars - 1;
+    addCookieToCanvas(typeSounds.nextType(rnd()), 0, 0);
+    let tries = 0;
+    while (hexGrid.size < total && tries < total * 20) {
+      tries++;
+      addCookieToCanvas(typeSounds.nextType(rnd()), ...Object.values(getAdjacentHexBiased('r', maxR)));
     }
   } else {
-    // RND: organic adjacent growth
-    addCookieToCanvas(types[rnd()], 0, 0);
-    for (let i = 1; i < requested; i++) {
+    // RND: pure organic growth, no bounds
+    addCookieToCanvas(typeSounds.nextType(rnd()), 0, 0);
+    for (let i = 1; i < total; i++) {
       const { q, r } = getRandomAdjacentHex();
-      addCookieToCanvas(types[rnd()], q, r);
+      addCookieToCanvas(typeSounds.nextType(rnd()), q, r);
     }
   }
 }
@@ -760,8 +839,7 @@ function addCookieToCanvas(type, q, r) {
   newCookie.dataset.r = r;
   newCookie.dataset.type = type;
   
-  if (type === 'negrito') newCookie.dataset.preset = 'minimoog';
-  if (type === 'dulce') newCookie.dataset.preset = 'vangelis';
+  newCookie.dataset.preset = typeSounds.presetFor(type);
   
   newCookie.style.position = 'absolute';
   const { x: baseX, y: baseY } = hexToPixel(q, r);
@@ -891,7 +969,7 @@ canvasContainer.addEventListener('click', () => selectCookie(null));
 function flipCookie(cookie) {
   const currentType = cookie.dataset.type;
   const newType = currentType === 'negrito' ? 'dulce' : 'negrito';
-  const newPreset = newType === 'negrito' ? 'minimoog' : 'vangelis';
+  const newPreset = typeSounds.presetFor(newType);
 
   cookie.classList.remove(currentType);
   cookie.classList.add(newType);
