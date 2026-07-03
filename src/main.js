@@ -532,13 +532,25 @@ function applyTypeSoundToExisting(type, newPreset) {
   });
 }
 
+// Play a short preview note so the user hears the new sound immediately
+function previewPreset(presetId) {
+  if (!isAudioInitialized) return;
+  const p = getPresetById(presetId);
+  if (!p) return;
+  const preview = createVoiceForPreset(p);
+  preview.synth.triggerAttackRelease('C4', '8n', Tone.now() + 0.05);
+  window.setTimeout(() => preview.dispose(), 2000);
+}
+
 document.getElementById('negrito-sound-select')?.addEventListener('change', (e) => {
   typeSounds.negrito = e.target.value;
   applyTypeSoundToExisting('negrito', e.target.value);
+  previewPreset(e.target.value);
 });
 document.getElementById('dulce-sound-select')?.addEventListener('change', (e) => {
   typeSounds.dulce = e.target.value;
   applyTypeSoundToExisting('dulce', e.target.value);
+  previewPreset(e.target.value);
 });
 
 // Drone Keyboard Toggles
@@ -592,8 +604,8 @@ const drumEventId = Tone.Transport.scheduleRepeat((time) => {
 // --- TYPE SOUNDS: preset per cookie type ---
 // When a cookie is created or flipped, it gets the preset assigned to its type here
 const typeSounds = {
-  negrito: 'minimoog',
-  dulce: 'vangelis',
+  negrito: 'don_satur',
+  dulce: 'don_satur',
   // Helper: given a random index 0|1, return the type string
   nextType(idx) { return idx === 0 ? 'negrito' : 'dulce'; },
   presetFor(type) { return type === 'negrito' ? this.negrito : this.dulce; }
