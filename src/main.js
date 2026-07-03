@@ -39,7 +39,6 @@ let isInAudioCallback = false;
 let presets = [];
 let presetsLoadPromise = null;
 const cookieVoices = new Map();
-const activeDroneNotes = new Map();
 let selectedCookie = null;
 
 // Helper: slider dB value → audio param (-80 or lower = true silence)
@@ -55,21 +54,11 @@ const masterCompressor = new Tone.Compressor(-24, 4).connect(masterReverb);
 
 // Independent volume buses — adjusting one never affects the others
 const cookieBus = new Tone.Volume(sliderDb(cookieVolSlider.value)).connect(masterCompressor);
-const droneBus = new Tone.Volume(-10).connect(masterCompressor);
 const drumBus = new Tone.Volume(sliderDb(beatVolSlider.value)).connect(masterCompressor);
 
 Tone.Destination.volume.value = sliderDb(masterVolSlider.value);
 
-// Drone synth routed through its own bus
-const droneSynth = new Tone.PolySynth(Tone.Synth, {
-  oscillator: { type: "sine" },
-  envelope: { attack: 2, decay: 1, sustain: 1, release: 4 }
-}).connect(droneBus);
-
-// Kept for legacy compatibility (drumBus replaces this)
-const drumVol = drumBus;
-
-const DRUM_POOL_SIZE = 8;
+const DRUM_POOL_SIZE = 1;
 
 function createDrumVoice(track) {
   if (track === 'kick') return new Tone.MembraneSynth().connect(drumBus);
@@ -287,49 +276,6 @@ async function initAudio() {
 
 loadPresets().catch((error) => console.error("Error loading YAML", error));
 
-function getActiveDroneDegrees() {
-  return Array.from(document.querySelectorAll('.key-btn.active'))
-    .map((btn) => parseInt(btn.dataset.degree, 10))
-    .filter((degree) => Number.isFinite(degree));
-}
-
-function releaseDroneDegree(degree, time = Tone.now()) {
-  const note = activeDroneNotes.get(degree);
-  if (!note) return;
-  droneSynth.triggerRelease(note, time);
-  activeDroneNotes.delete(degree);
-}
-
-function releaseActiveDrones(time = Tone.now()) {
-  activeDroneNotes.forEach((note) => droneSynth.triggerRelease(note, time));
-  activeDroneNotes.clear();
-}
-
-function attackDroneDegree(degree, time = Tone.now()) {
-  releaseDroneDegree(degree, time);
-  const note = getNoteFromIndex(degree - 5);
-  droneSynth.triggerAttack(note, time);
-  activeDroneNotes.set(degree, note);
-}
-
-function syncActiveDrones(time = Tone.now()) {
-  if (!isAudioInitialized) return;
-  const activeDegrees = getActiveDroneDegrees();
-  activeDroneNotes.forEach((note, degree) => {
-    if (!activeDegrees.includes(degree)) releaseDroneDegree(degree, time);
-  });
-  activeDegrees.forEach((degree) => {
-    if (!activeDroneNotes.has(degree)) attackDroneDegree(degree, time);
-  });
-}
-
-function retuneActiveDrones() {
-  if (!isAudioInitialized || activeDroneNotes.size === 0) return;
-  const activeDegrees = getActiveDroneDegrees();
-  releaseActiveDrones();
-  activeDegrees.forEach((degree) => attackDroneDegree(degree));
-}
-
 function setPlayButtonState(isPlaying) {
   btnPlay.textContent = isPlaying ? '⏹' : '▶';
   btnPlay.setAttribute('aria-label', isPlaying ? 'Stop' : 'Play');
@@ -468,15 +414,12 @@ btnPlay.addEventListener('click', async () => {
   }
 
   if (Tone.Transport.state === 'started') {
-    // Stop (not pause) resets the clock to zero — prevents desync on restart
     Tone.Transport.stop();
     clearPendingVisuals();
-    releaseActiveDrones();
     currentStep = 0;
     setPlayButtonState(false);
   } else {
-    Tone.Transport.start('+0.05'); // small offset lets the context catch up
-    syncActiveDrones();
+    Tone.Transport.start('+0.05');
     setPlayButtonState(true);
   }
 });
@@ -492,16 +435,11 @@ masterVolSlider.addEventListener('input', (e) => {
 cookieVolSlider.addEventListener('input', (e) => {
   cookieBus.volume.value = sliderDb(e.target.value);
 });
-const droneVolSlider = document.getElementById('drone-vol-slider');
-droneVolSlider.addEventListener('input', (e) => {
-  droneBus.volume.value = sliderDb(e.target.value);
-});
 beatVolSlider.addEventListener('input', (e) => {
   drumBus.volume.value = sliderDb(e.target.value);
 });
 rootNoteSelect.addEventListener('change', (e) => {
   rootNoteStr = e.target.value;
-  retuneActiveDrones();
 });
 directionSelect.addEventListener('change', () => { currentStep = 0; });
 
@@ -553,24 +491,6 @@ document.getElementById('dulce-sound-select')?.addEventListener('change', (e) =>
   previewPreset(e.target.value);
 });
 
-// Drone Keyboard Toggles
-document.querySelectorAll('.key-btn').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    try {
-      if (!isAudioInitialized) await initAudio();
-    } catch (error) {
-      console.error("Error initializing audio", error);
-      return;
-    }
-    btn.classList.toggle('active');
-    const degree = parseInt(btn.dataset.degree);
-    if (btn.classList.contains('active')) {
-      attackDroneDegree(degree);
-    } else {
-      releaseDroneDegree(degree);
-    }
-  });
-});
 
 // --- DRUM MACHINE LOGIC ---
 const drumSteps = { kick: Array(16).fill(false), snare: Array(16).fill(false), hihat: Array(16).fill(false) };
@@ -663,7 +583,6 @@ autogenCheckbox.addEventListener('change', async (e) => {
       try {
         if (!isAudioInitialized) await initAudio();
         Tone.Transport.start('+0.05');
-        syncActiveDrones();
         setPlayButtonState(true);
       } catch (err) {
         console.error(err);
@@ -1060,7 +979,6 @@ document.getElementById('btn-generate-manual').addEventListener('click', async (
     if (!isAudioInitialized) await initAudio();
     if (Tone.Transport.state !== 'started') {
       Tone.Transport.start('+0.05');
-      syncActiveDrones();
       setPlayButtonState(true);
     }
   } catch (err) {
@@ -1083,7 +1001,6 @@ document.addEventListener('visibilitychange', async () => {
   if (Tone.Transport.state === 'started') {
     try {
       await Tone.start();
-      syncActiveDrones();
     } catch (error) {
       console.error("Error resuming audio", error);
     }
@@ -1100,7 +1017,6 @@ document.addEventListener('visibilitychange', async () => {
 window.addEventListener('pagehide', () => {
   clearPendingVisuals();
   clearAutogenRequest(false);
-  releaseActiveDrones();
 });
 
 if (import.meta.hot) {
@@ -1110,12 +1026,9 @@ if (import.meta.hot) {
     Tone.Transport.clear(sequenceEventId);
     Tone.Transport.clear(drumEventId);
     Tone.Transport.clear(autogenEventId);
-    releaseActiveDrones();
     disposeAllCookieVoices();
-    droneSynth.dispose();
     disposeAllDrumVoices();
     cookieBus.dispose();
-    droneBus.dispose();
     drumBus.dispose();
     masterCompressor.dispose();
     masterReverb.dispose();
