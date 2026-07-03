@@ -263,7 +263,7 @@ function ensureCookieVoice(cookie) {
   if (isInAudioCallback) return currentVoice ?? null;
 
   disposeCookieVoice(cookie);
-  const preset = getPresetById(presetId);
+  const preset = getPresetById(presetId) ?? presets[0];
   if (!preset) return null;
 
   const voice = createVoiceForPreset(preset);
@@ -604,8 +604,8 @@ const drumEventId = Tone.Transport.scheduleRepeat((time) => {
 // --- TYPE SOUNDS: preset per cookie type ---
 // When a cookie is created or flipped, it gets the preset assigned to its type here
 const typeSounds = {
-  negrito: 'don_satur',
-  dulce: 'don_satur',
+  negrito: 'minimoog',
+  dulce: 'vangelis',
   // Helper: given a random index 0|1, return the type string
   nextType(idx) { return idx === 0 ? 'negrito' : 'dulce'; },
   presetFor(type) { return type === 'negrito' ? this.negrito : this.dulce; }
