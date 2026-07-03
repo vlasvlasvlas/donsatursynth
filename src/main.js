@@ -606,17 +606,7 @@ const autogenEventId = Tone.Transport.scheduleRepeat((time) => {
 }, "1m"); // every 1 measure (compás)
 
 function generateRandomPattern() {
-  if (isAudioInitialized && Tone.Transport.state === 'started') {
-    const savedVol = cookieBus.volume.value;
-    if (!isFinite(savedVol)) { _buildPattern(); return; }
-    cookieBus.volume.rampTo(-80, 0.03);
-    window.setTimeout(() => {
-      _buildPattern();
-      cookieBus.volume.rampTo(savedVol, 0.05);
-    }, 40);
-  } else {
-    _buildPattern();
-  }
+  _buildPattern();
 }
 
 // Biased adjacent hex: organic growth that prefers extending in the sweep direction
