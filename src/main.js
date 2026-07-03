@@ -521,12 +521,24 @@ function updateCookieCountStep() {
 document.getElementById('autogen-bars').addEventListener('input', updateCookieCountStep);
 updateCookieCountStep(); // initialise on load
 
-// Type sound selectors
+// Type sound selectors — update existing cookies of that type immediately
+function applyTypeSoundToExisting(type, newPreset) {
+  hexGrid.forEach((cookie) => {
+    if (cookie.dataset.type !== type) return;
+    cookie.dataset.preset = newPreset;
+    disposeCookieVoice(cookie);
+    ensureCookieVoice(cookie);
+    if (selectedCookie === cookie) presetSelect.value = newPreset;
+  });
+}
+
 document.getElementById('negrito-sound-select')?.addEventListener('change', (e) => {
   typeSounds.negrito = e.target.value;
+  applyTypeSoundToExisting('negrito', e.target.value);
 });
 document.getElementById('dulce-sound-select')?.addEventListener('change', (e) => {
   typeSounds.dulce = e.target.value;
+  applyTypeSoundToExisting('dulce', e.target.value);
 });
 
 // Drone Keyboard Toggles
