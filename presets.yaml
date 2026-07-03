@@ -1,4 +1,16 @@
 presets:
+  - id: don_satur
+    name: "Don Satur (Original)"
+    type: "Synth"
+    options:
+      oscillator:
+        type: "triangle"
+      envelope:
+        attack: 0.02
+        decay: 0.25
+        sustain: 0.4
+        release: 0.5
+
   - id: blade_runner
     name: "Blade Runner (CS-80)"
     type: "PolySynth"
