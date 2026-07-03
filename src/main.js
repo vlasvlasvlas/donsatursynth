@@ -35,10 +35,8 @@ helpModal.addEventListener('click', (e) => {
 
 // --- AUDIO & SEQUENCER STATE ---
 let isAudioInitialized = false;
-let isInAudioCallback = false;
 let presets = [];
 let presetsLoadPromise = null;
-const cookieVoices = new Map();
 let selectedCookie = null;
 
 // Helper: slider dB value → audio param (-80 or lower = true silence)
@@ -166,15 +164,22 @@ async function loadPresets() {
   return presetsLoadPromise;
 }
 
-function createVoiceForPreset(p) {
+// Shared voice per preset — all cookies of the same preset share one PolySynth.
+// This means adding/removing cookies or regenerating patterns NEVER creates
+// or disposes audio nodes. No CPU spikes, no clicks from disconnect().
+const sharedVoices = new Map();
+
+function createSharedVoiceForPreset(p) {
   let synth;
-  if (p.type === 'FMSynth') synth = new Tone.FMSynth(p.options || {});
-  else if (p.type === 'AMSynth') synth = new Tone.AMSynth(p.options || {});
-  else if (p.type === 'MembraneSynth') synth = new Tone.MembraneSynth(p.options || {});
-  else if (p.type === 'PolySynth') synth = new Tone.PolySynth(Tone.Synth, p.options || {});
-  else synth = new Tone.Synth(p.options || {});
+  const opts = p.options || {};
+  if (p.type === 'FMSynth') synth = new Tone.PolySynth(Tone.FMSynth, opts);
+  else if (p.type === 'AMSynth') synth = new Tone.PolySynth(Tone.AMSynth, opts);
+  else if (p.type === 'MembraneSynth') synth = new Tone.PolySynth(Tone.MembraneSynth, opts);
+  else synth = new Tone.PolySynth(Tone.Synth, opts);
 
   synth.volume.value = -6;
+  synth.maxPolyphony = 32;
+
   let filter = null;
   if (p.filter) {
     filter = new Tone.Filter(p.filter.frequency || 1000, p.filter.type || "lowpass");
@@ -186,44 +191,32 @@ function createVoiceForPreset(p) {
     synth.connect(cookieBus);
   }
 
-  const attackTime = p.options?.envelope?.attack ?? 0.01;
-  const releaseTime = p.options?.envelope?.release ?? 0.5;
+  const attackTime = opts?.envelope?.attack ?? 0.01;
   const minDuration = Math.max(0.05, attackTime + 0.02);
-  // Wait long enough for the natural release tail + Tone lookahead to finish
-  const disposeAfterMs = Math.ceil((releaseTime + 0.5) * 1000);
 
-  return {
-    synth,
-    minDuration,
-    dispose() {
-      // Do NOT disconnect immediately. Let already-scheduled notes and
-      // in-flight envelopes decay through their natural release —
-      // any hard disconnect mid-sound is an amplitude jump = click,
-      // and killing lookahead notes creates the audible loop gap.
-      window.setTimeout(() => {
-        try { synth.disconnect(); } catch (_) {}
-        if (filter) { try { filter.disconnect(); } catch (_) {} }
-        try { synth.dispose(); } catch (_) {}
-        if (filter) { try { filter.dispose(); } catch (_) {} }
-      }, disposeAfterMs);
-    }
-  };
+  return { synth, minDuration, filter };
 }
 
 function getPresetById(presetId) {
   return presets.find((preset) => preset.id === presetId);
 }
 
-function disposeCookieVoice(cookie) {
-  const voice = cookieVoices.get(cookie);
-  if (!voice) return;
-  voice.dispose();
-  cookieVoices.delete(cookie);
+function getSharedVoice(presetId) {
+  if (!isAudioInitialized) return null;
+  if (sharedVoices.has(presetId)) return sharedVoices.get(presetId);
+  const preset = getPresetById(presetId) ?? presets[0];
+  if (!preset) return null;
+  const voice = createSharedVoiceForPreset(preset);
+  sharedVoices.set(presetId, voice);
+  return voice;
 }
 
-function disposeAllCookieVoices() {
-  cookieVoices.forEach((voice) => voice.dispose());
-  cookieVoices.clear();
+function disposeAllSharedVoices() {
+  sharedVoices.forEach(({ synth, filter }) => {
+    try { synth.dispose(); } catch (_) {}
+    if (filter) { try { filter.dispose(); } catch (_) {} }
+  });
+  sharedVoices.clear();
 }
 
 function getNextDrumVoice(track) {
@@ -241,35 +234,17 @@ function clearDrumPlayingIndicators() {
   document.querySelectorAll('.step-btn.playing').forEach((button) => button.classList.remove('playing'));
 }
 
-function ensureCookieVoice(cookie) {
-  if (!isAudioInitialized) return null;
-  const presetId = cookie.dataset.preset;
-  if (!presetId) return null;
-  const currentVoice = cookieVoices.get(cookie);
-  if (currentVoice?.presetId === presetId) return currentVoice;
-  // Don't create new nodes during scheduling callbacks — causes audio glitches
-  if (isInAudioCallback) return currentVoice ?? null;
-
-  disposeCookieVoice(cookie);
-  const preset = getPresetById(presetId) ?? presets[0];
-  if (!preset) return null;
-
-  const voice = createVoiceForPreset(preset);
-  voice.presetId = presetId;
-  cookieVoices.set(cookie, voice);
-  return voice;
-}
-
 async function initAudio() {
   if (isAudioInitialized) return;
   await loadPresets();
   await Tone.start();
-  // Increase lookahead for stable scheduling (less dropout risk)
   Tone.context.lookAhead = 0.3;
   await masterReverb.ready;
 
   isAudioInitialized = true;
-  hexGrid.forEach((cookie) => ensureCookieVoice(cookie));
+  // Pre-create the shared voices for the default type sounds so first hits don't allocate
+  getSharedVoice(typeSounds.negrito);
+  getSharedVoice(typeSounds.dulce);
   console.log("Tone.js & Synths Initialized");
 }
 
@@ -335,8 +310,6 @@ function transportStepIndex(time, subdivision) {
 
 let currentStep = 0;
 const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
-  isInAudioCallback = true;
-  try {
   const dir = directionSelect.value;
 
   if (hexGrid.size === 0) return;
@@ -388,18 +361,14 @@ const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
 
     const presetId = cookie.dataset.preset;
     if (presetId) {
-      const voice = ensureCookieVoice(cookie);
+      const voice = getSharedVoice(presetId);
       if (!voice) return;
       const note = getNoteFromIndex(r);
-      // Clamp duration so the attack phase always completes (prevents mid-attack clicks)
       const stepDur = subdivisionSeconds("8n", time);
       const noteDur = Math.max(stepDur, voice.minDuration ?? stepDur);
       voice.synth.triggerAttackRelease(note, noteDur, time);
     }
   });
-  } finally {
-    isInAudioCallback = false;
-  }
 }, "8n");
 
 // --- MASTER CONTROLS ---
@@ -463,20 +432,17 @@ function applyTypeSoundToExisting(type, newPreset) {
   hexGrid.forEach((cookie) => {
     if (cookie.dataset.type !== type) return;
     cookie.dataset.preset = newPreset;
-    disposeCookieVoice(cookie);
-    ensureCookieVoice(cookie);
     if (selectedCookie === cookie) presetSelect.value = newPreset;
   });
+  // Ensure the shared voice exists so first hit doesn't allocate
+  getSharedVoice(newPreset);
 }
 
 // Play a short preview note so the user hears the new sound immediately
 function previewPreset(presetId) {
-  if (!isAudioInitialized) return;
-  const p = getPresetById(presetId);
-  if (!p) return;
-  const preview = createVoiceForPreset(p);
-  preview.synth.triggerAttackRelease('C4', '8n', Tone.now() + 0.05);
-  window.setTimeout(() => preview.dispose(), 2000);
+  const voice = getSharedVoice(presetId);
+  if (!voice) return;
+  voice.synth.triggerAttackRelease('C4', '8n', Tone.now() + 0.05);
 }
 
 document.getElementById('negrito-sound-select')?.addEventListener('change', (e) => {
@@ -811,7 +777,6 @@ function addCookieToCanvas(type, q, r) {
 
   gridLayer.appendChild(newCookie);
   hexGrid.set(key, newCookie);
-  ensureCookieVoice(newCookie);
   return newCookie;
 }
 
@@ -908,8 +873,7 @@ function flipCookie(cookie) {
   cookie.classList.add('flipping');
   cookie.addEventListener('animationend', () => cookie.classList.remove('flipping'), { once: true });
 
-  disposeCookieVoice(cookie);
-  ensureCookieVoice(cookie);
+  getSharedVoice(newPreset);
 
   if (selectedCookie === cookie) {
     configCookieType.textContent = newType === 'negrito' ? 'Negrito (Bajo)' : 'Dulce (Melodía)';
@@ -938,13 +902,11 @@ function selectCookie(cookieNode) {
 presetSelect.addEventListener('change', (e) => {
   if (!selectedCookie) return;
   selectedCookie.dataset.preset = e.target.value;
-  disposeCookieVoice(selectedCookie);
-  ensureCookieVoice(selectedCookie);
+  getSharedVoice(e.target.value);
 });
 
 document.getElementById('btn-remove-cookie').addEventListener('click', () => {
   if (selectedCookie) {
-    disposeCookieVoice(selectedCookie);
     hexGrid.delete(`${selectedCookie.dataset.q},${selectedCookie.dataset.r}`);
     selectedCookie.remove();
     selectCookie(null);
@@ -955,7 +917,6 @@ function clearGrid({ resetAutogen = false } = {}) {
   currentStep = 0;
   if (resetAutogen) measureCounter = 0;
   clearDrumPlayingIndicators();
-  disposeAllCookieVoices();
   hexGrid.clear();
   gridLayer.querySelectorAll('.cookie-draggable:not(.nav-cookie)').forEach(c => c.remove());
   selectCookie(null);
@@ -1015,7 +976,7 @@ if (import.meta.hot) {
     Tone.Transport.clear(sequenceEventId);
     Tone.Transport.clear(drumEventId);
     Tone.Transport.clear(autogenEventId);
-    disposeAllCookieVoices();
+    disposeAllSharedVoices();
     disposeAllDrumVoices();
     cookieBus.dispose();
     drumBus.dispose();
@@ -1029,7 +990,7 @@ if (import.meta.env.DEV) {
   window.__DON_SATUR_SYNTH_DEBUG__ = {
     get autogenPending() { return autogenRequestPending; },
     get cookieCount() { return hexGrid.size; },
-    get cookieVoiceCount() { return cookieVoices.size; },
+    get cookieVoiceCount() { return sharedVoices.size; },
     get deferredAutogenWhileHidden() { return deferredAutogenWhileHidden; },
     get transportTicks() { return Tone.Transport.ticks; },
     get visualTimeoutCount() { return visualTimeoutIds.size; },
