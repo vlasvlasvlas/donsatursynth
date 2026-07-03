@@ -512,12 +512,11 @@ const drumEventId = Tone.Transport.scheduleRepeat((time) => {
     document.querySelectorAll(`.step-btn[data-step="${step}"]`).forEach(b => b.classList.add('playing'));
   });
 
-  const drumDuration = subdivisionSeconds("16n", time);
-  if (drumSteps.kick[step]) getNextDrumVoice('kick').triggerAttackRelease("C1", drumDuration, time);
-  if (drumSteps.snare[step]) getNextDrumVoice('snare').triggerAttackRelease(drumDuration, time);
+  if (drumSteps.kick[step]) getNextDrumVoice('kick').triggerAttack("C1", time);
+  if (drumSteps.snare[step]) getNextDrumVoice('snare').triggerAttack(time);
   if (drumSteps.hihat[step]) {
     const hihat = getNextDrumVoice('hihat');
-    hihat.triggerAttackRelease(hihat.frequency.value, drumDuration, time);
+    hihat.triggerAttack(hihat.frequency.value, time);
   }
 }, "16n");
 
@@ -608,12 +607,13 @@ const autogenEventId = Tone.Transport.scheduleRepeat((time) => {
 
 function generateRandomPattern() {
   if (isAudioInitialized && Tone.Transport.state === 'started') {
-    const savedVol = Tone.Destination.volume.value;
-    Tone.Destination.volume.rampTo(-80, 0.06);
+    const savedVol = cookieBus.volume.value;
+    if (!isFinite(savedVol)) { _buildPattern(); return; }
+    cookieBus.volume.rampTo(-80, 0.03);
     window.setTimeout(() => {
       _buildPattern();
-      window.setTimeout(() => Tone.Destination.volume.rampTo(savedVol, 0.08), 20);
-    }, 70);
+      cookieBus.volume.rampTo(savedVol, 0.05);
+    }, 40);
   } else {
     _buildPattern();
   }
