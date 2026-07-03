@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50 3 93 25 93 75 50 97 7 75 7 25' fill='%23ffffff'/%3E%3C/svg%3E" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Don Satur Synth</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Great+Vibes&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app">
+      <!-- Navbar (Diseño Paquete) -->
+      <nav class="navbar">
+        <div class="nav-yellow-line top"></div>
+        <div class="nav-content">
+          <div class="brand-container">
+            <h1>DONSATURSYNTH</h1>
+            <span class="fundado">Fundado en 1967</span>
+          </div>
+          
+          <!-- Dispensador en Navbar -->
+          <div class="nav-center dispenser-nav">
+            <div class="cookie-draggable negrito nav-cookie" data-type="negrito" draggable="true" title="Click para agregar (Bajo)"></div>
+            <div class="cookie-draggable dulce nav-cookie" data-type="dulce" draggable="true" title="Click para agregar (Melodía)"></div>
+          </div>
+          
+          <div class="nav-right">
+            <button id="btn-play" class="btn-play nav-play-btn" type="button" aria-label="Play">▶</button>
+            <button id="btn-settings" class="icon-btn" type="button" title="Configuración Global" aria-label="Configuración global">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+            <button id="btn-help" class="icon-btn" type="button" title="Acerca de" aria-label="Acerca de">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            </button>
+          </div>
+        </div>
+        <div class="nav-yellow-line bottom"></div>
+      </nav>
+
+      <!-- Contenedor Principal (Flex 1) -->
+      <div id="main-content" style="flex: 1; position: relative; overflow: hidden; display: flex;">
+        <!-- Main Canvas Area -->
+        <main id="canvas-container" style="flex: 1; position: relative; overflow: hidden; background: radial-gradient(circle at center, #ffffff 0%, var(--bg-color) 100%); cursor: grab;">
+          <!-- Wrapper para permitir paneo -->
+          <div id="grid-layer"></div>
+        </main>
+
+        <!-- Sidebar (Configuración) -->
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-header">
+            <h2 id="sidebar-title">Controles</h2>
+            <button id="btn-close-sidebar" class="icon-btn close-btn" type="button" aria-label="Cerrar controles">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+          <div class="sidebar-content" id="sidebar-content-area">
+            
+            <div id="global-config" class="controls">
+              <h3>Transport</h3>
+              <div class="param-group">
+                <label for="master-vol-slider">Volumen General</label>
+                <input type="range" id="master-vol-slider" class="fader" min="-40" max="10" value="-5">
+              </div>
+              <div class="param-group">
+                <label for="bpm-slider">BPM: <span id="bpm-val">120</span></label>
+                <input type="range" id="bpm-slider" class="fader" min="60" max="240" value="120">
+              </div>
+
+              <h3>Arpegiador</h3>
+              <div class="param-group">
+                <label for="root-note-select">Root Note (Escala)</label>
+                <select id="root-note-select" class="synth-select">
+                  <option value="C">Do (C)</option>
+                  <option value="C#">Do# (C#)</option>
+                  <option value="D">Re (D)</option>
+                  <option value="Eb">Mi b (Eb)</option>
+                  <option value="E">Mi (E)</option>
+                  <option value="F">Fa (F)</option>
+                  <option value="F#">Fa# (F#)</option>
+                  <option value="G">Sol (G)</option>
+                  <option value="Ab">La b (Ab)</option>
+                  <option value="A">La (A)</option>
+                  <option value="Bb">Si b (Bb)</option>
+                  <option value="B">Si (B)</option>
+                </select>
+              </div>
+              <div class="param-group">
+                <label for="direction-select">Dirección (Paneo)</label>
+                <select id="direction-select" class="synth-select">
+                  <option value="LR">Izquierda → Derecha</option>
+                  <option value="RL">Derecha → Izquierda</option>
+                  <option value="TB">Arriba ↓ Abajo</option>
+                  <option value="BT">Abajo ↑ Arriba</option>
+                  <option value="RND">Aleatorio</option>
+                </select>
+              </div>
+
+              <h3>Drone Pad</h3>
+              <div class="param-group">
+                <label>Activar Colchón</label>
+                <div id="drone-keyboard" class="keyboard">
+                  <button class="key-btn" type="button" data-degree="0">I</button>
+                  <button class="key-btn" type="button" data-degree="1">II</button>
+                  <button class="key-btn" type="button" data-degree="2">III</button>
+                  <button class="key-btn" type="button" data-degree="3">IV</button>
+                  <button class="key-btn" type="button" data-degree="4">V</button>
+                </div>
+              </div>
+
+              <div class="param-group">
+                <label for="drone-vol-slider">Volumen Colchón</label>
+                <input type="range" id="drone-vol-slider" class="synth-slider" min="-60" max="10" step="1" value="-12">
+              </div>
+
+              <h3>Drum Machine</h3>
+              <div class="param-group">
+                <label for="drum-kit-select">Kit de Sonido</label>
+                <select id="drum-kit-select" class="synth-select">
+                  <option value="808">Classic 808</option>
+                  <option value="8bit">8-Bit (C64)</option>
+                  <option value="electro">Electro</option>
+                </select>
+              </div>
+              
+              <div class="drum-machine">
+                <div class="drum-track" data-track="kick">
+                  <span class="track-label">Kick</span>
+                  <div class="step-grid">
+                    <!-- 16 steps for kick -->
+                    <button class="step-btn" data-step="0"></button><button class="step-btn" data-step="1"></button>
+                    <button class="step-btn" data-step="2"></button><button class="step-btn" data-step="3"></button>
+                    <button class="step-btn" data-step="4"></button><button class="step-btn" data-step="5"></button>
+                    <button class="step-btn" data-step="6"></button><button class="step-btn" data-step="7"></button>
+                    <button class="step-btn" data-step="8"></button><button class="step-btn" data-step="9"></button>
+                    <button class="step-btn" data-step="10"></button><button class="step-btn" data-step="11"></button>
+                    <button class="step-btn" data-step="12"></button><button class="step-btn" data-step="13"></button>
+                    <button class="step-btn" data-step="14"></button><button class="step-btn" data-step="15"></button>
+                  </div>
+                </div>
+                <div class="drum-track" data-track="snare">
+                  <span class="track-label">Snare</span>
+                  <div class="step-grid">
+                    <!-- 16 steps for snare -->
+                    <button class="step-btn" data-step="0"></button><button class="step-btn" data-step="1"></button>
+                    <button class="step-btn" data-step="2"></button><button class="step-btn" data-step="3"></button>
+                    <button class="step-btn" data-step="4"></button><button class="step-btn" data-step="5"></button>
+                    <button class="step-btn" data-step="6"></button><button class="step-btn" data-step="7"></button>
+                    <button class="step-btn" data-step="8"></button><button class="step-btn" data-step="9"></button>
+                    <button class="step-btn" data-step="10"></button><button class="step-btn" data-step="11"></button>
+                    <button class="step-btn" data-step="12"></button><button class="step-btn" data-step="13"></button>
+                    <button class="step-btn" data-step="14"></button><button class="step-btn" data-step="15"></button>
+                  </div>
+                </div>
+                <div class="drum-track" data-track="hihat">
+                  <span class="track-label">HiHat</span>
+                  <div class="step-grid">
+                    <!-- 16 steps for hihat -->
+                    <button class="step-btn" data-step="0"></button><button class="step-btn" data-step="1"></button>
+                    <button class="step-btn" data-step="2"></button><button class="step-btn" data-step="3"></button>
+                    <button class="step-btn" data-step="4"></button><button class="step-btn" data-step="5"></button>
+                    <button class="step-btn" data-step="6"></button><button class="step-btn" data-step="7"></button>
+                    <button class="step-btn" data-step="8"></button><button class="step-btn" data-step="9"></button>
+                    <button class="step-btn" data-step="10"></button><button class="step-btn" data-step="11"></button>
+                    <button class="step-btn" data-step="12"></button><button class="step-btn" data-step="13"></button>
+                    <button class="step-btn" data-step="14"></button><button class="step-btn" data-step="15"></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="param-group" style="margin-top: 10px;">
+                <label for="beat-vol-slider">Volumen Batería</label>
+                <input type="range" id="beat-vol-slider" class="fader" min="-40" max="10" value="-10">
+              </div>
+
+              <h3>Generador Evolutivo</h3>
+              <div class="param-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                <input type="checkbox" id="autogen-checkbox" style="width: 16px; height: 16px; accent-color: #ffca28;">
+                <label for="autogen-checkbox" style="color: #fff; font-size: 14px;">Auto-Generar Loop</label>
+              </div>
+              <div class="param-group">
+                <label for="autogen-bars">Cada N Compases</label>
+                <input type="number" id="autogen-bars" class="synth-input" value="4" min="1" max="32">
+              </div>
+              <div class="param-group">
+                <label for="random-count">Nº de Galletas</label>
+                <input type="number" id="random-count" class="synth-input" value="30" min="1" max="100">
+              </div>
+              
+              <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="btn-generate-manual" class="btn-action" style="flex: 1; margin: 0;">Generar</button>
+                <button id="btn-clear" class="btn-danger" style="flex: 1; margin: 0;">Limpiar</button>
+              </div>
+            </div>
+
+            <div id="cookie-config" class="controls hidden">
+              <h3>Patch</h3>
+              <div class="param-group">
+                <label>Tipo (Forma): <strong id="config-cookie-type">-</strong></label>
+              </div>
+              
+              <div class="param-group">
+                <label for="preset-select">Preset (Sonido):</label>
+                <select id="preset-select" class="synth-select">
+                  <!-- Se poblará con presets.yaml -->
+                </select>
+              </div>
+
+              <button id="btn-remove-cookie" class="btn-danger" type="button">Eliminar Nodo</button>
+            </div>
+
+          </div>
+        </aside>
+      </div>
+
+      <!-- Modal de Ayuda -->
+      <div id="help-modal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Sobre Don Satur Synth</h2>
+            <button id="btn-close-help" class="icon-btn" type="button" aria-label="Cerrar ayuda">✕</button>
+          </div>
+          <div class="modal-body">
+            <p>¡Bienvenido a <strong>Don Satur Synth</strong>!</p>
+            <p>Esta es una interfaz visual y sonora experimental. El lienzo representa el interior de un paquete de bizcochos Don Satur.</p>
+            <p><strong>Cómo jugar:</strong></p>
+            <ul>
+              <li>Abre la configuración (⚙️) y arrastra los bizcochos hexagonales al lienzo en blanco.</li>
+              <li>Los bizcochos se imantarán entre sí gracias a la geometría de la cuadrícula.</li>
+              <li>Pulsa "Play" para iniciar el secuenciador radial. ¡Cada bizcocho genera un sonido diferente según su tipo!</li>
+            </ul>
+            <p>Desarrollado con ❤️ y Web Audio API.</p>
+            <p><a href="https://github.com" target="_blank" id="github-link">🔗 Ver en GitHub</a></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
