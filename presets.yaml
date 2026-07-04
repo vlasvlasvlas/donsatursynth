@@ -18,10 +18,10 @@ presets:
       oscillator:
         type: "sawtooth"
       envelope:
-        attack: 0.5
+        attack: 0.08
         decay: 0.1
         sustain: 1.0
-        release: 2.0
+        release: 0.8
     filter:
       type: "lowpass"
       frequency: 800
@@ -55,10 +55,10 @@ presets:
       oscillator:
         type: "triangle"
       envelope:
-        attack: 1.5
+        attack: 0.15
         decay: 0.5
         sustain: 1.0
-        release: 3.0
+        release: 1.0
     filter:
       type: "lowpass"
       frequency: 400
@@ -114,17 +114,17 @@ presets:
       oscillator:
         type: "sine"
       envelope:
-        attack: 2.0
+        attack: 0.2
         decay: 1.0
         sustain: 1.0
-        release: 4.0
+        release: 1.5
       modulation:
         type: "triangle"
       modulationEnvelope:
-        attack: 2.0
+        attack: 0.2
         decay: 1.0
         sustain: 1.0
-        release: 4.0
+        release: 1.5
 
   - id: dx7_epiano
     name: "DX7 E.Piano"
@@ -155,10 +155,10 @@ presets:
         type: "pwm"
         modulationFrequency: 0.2
       envelope:
-        attack: 0.8
+        attack: 0.05
         decay: 0.3
         sustain: 0.8
-        release: 1.5
+        release: 0.6
     filter:
       type: "lowpass"
       frequency: 1200
