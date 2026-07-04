@@ -640,9 +640,13 @@ window.addEventListener('mousemove', (e) => {
 });
 window.addEventListener('mouseup', () => { isPanning = false; });
 
+let cachedCanvasCenter = null;
 function getCanvasCenter() {
+  if (cachedCanvasCenter) return cachedCanvasCenter;
   const rect = canvasContainer.getBoundingClientRect();
-  return { x: rect.width / 2, y: rect.height / 2 };
+  if (rect.width === 0 && rect.height === 0) return { x: 0, y: 0 };
+  cachedCanvasCenter = { x: rect.width / 2, y: rect.height / 2 };
+  return cachedCanvasCenter;
 }
 
 function pixelToHex(x, y) {
@@ -901,7 +905,10 @@ document.getElementById('btn-generate-manual').addEventListener('click', async (
   generateRandomPattern();
 });
 
-window.addEventListener('resize', updateAllCookiesPositions);
+window.addEventListener('resize', () => {
+  cachedCanvasCenter = null;
+  updateAllCookiesPositions();
+});
 
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) {
