@@ -309,6 +309,8 @@ function transportStepIndex(time, subdivision) {
 }
 
 let currentStep = 0;
+let patternStepOffset = 0;
+
 const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
   const transportStep = transportStepIndex(time, '8n');
 
@@ -320,6 +322,7 @@ const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
     const targetMeasures = Math.max(1, parseInt(document.getElementById('autogen-bars')?.value, 10) || 4);
     if (transportStep % (8 * targetMeasures) === 0) {
       generateRandomPattern();
+      patternStepOffset = transportStep; // Reset local step so new pattern starts at minQ
     }
   }
 
@@ -342,14 +345,15 @@ const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
   });
 
   // 3. Step position from the Transport clock so drums and sequence stay locked.
+  const localStep = Math.max(0, transportStep - patternStepOffset);
   if (dir === 'LR') {
-    currentStep = minQ + (transportStep % (maxQ - minQ + 1));
+    currentStep = minQ + (localStep % (maxQ - minQ + 1));
   } else if (dir === 'RL') {
-    currentStep = maxQ - (transportStep % (maxQ - minQ + 1));
+    currentStep = maxQ - (localStep % (maxQ - minQ + 1));
   } else if (dir === 'TB') {
-    currentStep = minR + (transportStep % (maxR - minR + 1));
+    currentStep = minR + (localStep % (maxR - minR + 1));
   } else if (dir === 'BT') {
-    currentStep = maxR - (transportStep % (maxR - minR + 1));
+    currentStep = maxR - (localStep % (maxR - minR + 1));
   }
 
   // 4. Find nodes to play
@@ -397,6 +401,7 @@ btnPlay.addEventListener('click', async () => {
     Tone.Transport.stop();
     clearPendingVisuals();
     currentStep = 0;
+    patternStepOffset = 0;
     setPlayButtonState(false);
   } else {
     Tone.Transport.start('+0.05');
@@ -903,6 +908,7 @@ document.getElementById('btn-generate-manual').addEventListener('click', async (
     console.error(err);
   }
   generateRandomPattern();
+  patternStepOffset = transportStepIndex(audioNow(), '8n');
 });
 
 window.addEventListener('resize', () => {
