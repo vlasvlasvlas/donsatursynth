@@ -310,6 +310,19 @@ function transportStepIndex(time, subdivision) {
 
 let currentStep = 0;
 const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
+  const transportStep = transportStepIndex(time, '8n');
+
+  // Autogen: regenerate synchronously at start of every N-th measure.
+  // MUST happen BEFORE the play-notes logic so this callback picks up the
+  // new hexGrid immediately — otherwise the boundary 8n plays the old
+  // pattern's step-0 (a phantom note) and the new pattern is late by 250ms.
+  if (autogenCheckbox?.checked && transportStep > 0 && !document.hidden) {
+    const targetMeasures = Math.max(1, parseInt(document.getElementById('autogen-bars')?.value, 10) || 4);
+    if (transportStep % (8 * targetMeasures) === 0) {
+      generateRandomPattern();
+    }
+  }
+
   const dir = directionSelect.value;
 
   if (hexGrid.size === 0) return;
@@ -329,7 +342,6 @@ const sequenceEventId = Tone.Transport.scheduleRepeat((time) => {
   });
 
   // 3. Step position from the Transport clock so drums and sequence stay locked.
-  const transportStep = transportStepIndex(time, '8n');
   if (dir === 'LR') {
     currentStep = minQ + (transportStep % (maxQ - minQ + 1));
   } else if (dir === 'RL') {
@@ -504,71 +516,24 @@ function syncTypeSoundDropdowns() {
 }
 
 // --- AUTO GENERATOR LOGIC ---
+// Regeneration itself is triggered from within the sequencer callback
+// (see the transportStep % (8 * targetMeasures) check). Nothing to schedule here.
 const autogenCheckbox = document.getElementById('autogen-checkbox');
-let measureCounter = 0;
-let autogenRequestPending = false;
-let autogenTimeoutId = null;
-let deferredAutogenWhileHidden = false;
-
-function clearAutogenRequest(defer = false) {
-  if (autogenTimeoutId !== null) {
-    window.clearTimeout(autogenTimeoutId);
-    autogenTimeoutId = null;
-  }
-  autogenRequestPending = false;
-  if (defer) deferredAutogenWhileHidden = true;
-}
-
-function requestGeneratedPattern() {
-  if (document.hidden) {
-    deferredAutogenWhileHidden = true;
-    return;
-  }
-  if (autogenRequestPending) return;
-  autogenRequestPending = true;
-  autogenTimeoutId = window.setTimeout(() => {
-    autogenRequestPending = false;
-    autogenTimeoutId = null;
-    if (document.hidden) {
-      deferredAutogenWhileHidden = true;
-      return;
-    }
-    generateRandomPattern();
-  }, 16);
-}
 
 autogenCheckbox.addEventListener('change', async (e) => {
-  if (e.target.checked) {
-    measureCounter = 0;
-    requestGeneratedPattern();
-    
-    // Auto-start si no estaba corriendo
-    if (Tone.Transport.state !== 'started') {
-      try {
-        if (!isAudioInitialized) await initAudio();
-        Tone.Transport.start('+0.05');
-        setPlayButtonState(true);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  }
-});
-
-const autogenEventId = Tone.Transport.scheduleRepeat((time) => {
-  if (!autogenCheckbox.checked) {
-    measureCounter = 0;
+  if (!e.target.checked) return;
+  try {
+    if (!isAudioInitialized) await initAudio();
+  } catch (err) {
+    console.error(err);
     return;
   }
-  
-  const targetMeasures = Math.max(1, parseInt(document.getElementById('autogen-bars')?.value, 10) || 4);
-  measureCounter++;
-  
-  if (measureCounter >= targetMeasures) {
-    measureCounter = 0;
-    requestGeneratedPattern();
+  generateRandomPattern();
+  if (Tone.Transport.state !== 'started') {
+    Tone.Transport.start('+0.05');
+    setPlayButtonState(true);
   }
-}, "1m"); // every 1 measure (compás)
+});
 
 function generateRandomPattern() {
   _buildPattern();
@@ -913,16 +878,15 @@ document.getElementById('btn-remove-cookie').addEventListener('click', () => {
   }
 });
 
-function clearGrid({ resetAutogen = false } = {}) {
+function clearGrid() {
   currentStep = 0;
-  if (resetAutogen) measureCounter = 0;
   clearDrumPlayingIndicators();
   hexGrid.clear();
   gridLayer.querySelectorAll('.cookie-draggable:not(.nav-cookie)').forEach(c => c.remove());
   selectCookie(null);
 }
 
-document.getElementById('btn-clear').addEventListener('click', () => clearGrid({ resetAutogen: true }));
+document.getElementById('btn-clear').addEventListener('click', () => clearGrid());
 
 document.getElementById('btn-generate-manual').addEventListener('click', async () => {
   try {
@@ -941,41 +905,22 @@ window.addEventListener('resize', updateAllCookiesPositions);
 
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) {
-    const hadPendingAutogen = autogenRequestPending || autogenTimeoutId !== null;
     clearPendingVisuals();
-    clearAutogenRequest(hadPendingAutogen);
     return;
   }
-
   clearPendingVisuals();
   if (Tone.Transport.state === 'started') {
-    try {
-      await Tone.start();
-    } catch (error) {
-      console.error("Error resuming audio", error);
-    }
-  }
-
-  if (deferredAutogenWhileHidden && autogenCheckbox.checked) {
-    deferredAutogenWhileHidden = false;
-    requestGeneratedPattern();
-  } else {
-    deferredAutogenWhileHidden = false;
+    try { await Tone.start(); } catch (error) { console.error("Error resuming audio", error); }
   }
 });
 
-window.addEventListener('pagehide', () => {
-  clearPendingVisuals();
-  clearAutogenRequest(false);
-});
+window.addEventListener('pagehide', clearPendingVisuals);
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     clearPendingVisuals();
-    clearAutogenRequest(false);
     Tone.Transport.clear(sequenceEventId);
     Tone.Transport.clear(drumEventId);
-    Tone.Transport.clear(autogenEventId);
     disposeAllSharedVoices();
     disposeAllDrumVoices();
     cookieBus.dispose();
@@ -988,10 +933,8 @@ if (import.meta.hot) {
 
 if (import.meta.env.DEV) {
   window.__DON_SATUR_SYNTH_DEBUG__ = {
-    get autogenPending() { return autogenRequestPending; },
     get cookieCount() { return hexGrid.size; },
     get cookieVoiceCount() { return sharedVoices.size; },
-    get deferredAutogenWhileHidden() { return deferredAutogenWhileHidden; },
     get transportTicks() { return Tone.Transport.ticks; },
     get visualTimeoutCount() { return visualTimeoutIds.size; },
   };
