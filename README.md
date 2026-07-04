@@ -1,4 +1,4 @@
-# 🍪 Don Satur Synth
+# ⬢ ⬡ Don Satur Synth
 
 **Un secuenciador musical interactivo inspirado en las galletitas Don Satur.**
 
@@ -38,7 +38,8 @@ Cada galletita puede tener un preset de síntesis diferente, cambiable desde el 
 |--------|-----------|
 | **Click corto** (< 280ms) | Invierte el tipo: negrita ↔ dulce (con animación flip) |
 | **Click largo** (sostener > 280ms) | Selecciona la galletita y abre el panel de configuración |
-| **Arrastrar** (drag) | Mueve la galletita a otro hexágono del lienzo |
+| **Arrastrar** (drag) sobre el lienzo | Mueve la galletita a otro hexágono vacío |
+| **Arrastrar** (drag) hacia la barra | Elimina la galletita soltándola sobre el ícono de la papelera |
 
 ### Controles de transporte
 
@@ -56,11 +57,7 @@ Cada galletita puede tener un preset de síntesis diferente, cambiable desde el 
 
 La altura de la nota de cada galletita depende de su posición vertical (R) en la cuadrícula.
 
-### Drone Pad
 
-Acordes de fondo sostenidos. Activás/desactivás cada grado de la escala (I–V) y suenan mientras el transporte está activo.
-
-- **Volumen Colchón** — Controla el volumen del drone por separado.
 
 ### Drum Machine
 
