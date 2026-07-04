@@ -139,6 +139,29 @@ body {
   transition: all 0.1s ease-in-out;
 }
 
+.trash-zone {
+  width: 50px;
+  height: 57.73px;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.trash-zone.drag-over {
+  transform: scale(1.1);
+}
+
+.trash-zone.drag-over .trash-hex {
+  stroke: #ff4d4d;
+  fill: rgba(255, 0, 0, 0.2);
+}
+
+.trash-zone.drag-over .trash-icon {
+  stroke: #ff4d4d;
+}
+
 
 .nav-right {
   display: flex;
@@ -579,7 +602,8 @@ body {
     height: auto;
   }
 
-  .cookie-draggable.nav-cookie {
+  .cookie-draggable.nav-cookie,
+  .trash-zone {
     width: 42px;
     height: 48.5px;
   }
@@ -636,7 +660,8 @@ body {
     gap: 6px;
   }
 
-  .cookie-draggable.nav-cookie {
+  .cookie-draggable.nav-cookie,
+  .trash-zone {
     width: 38px;
     height: 43.85px;
   }

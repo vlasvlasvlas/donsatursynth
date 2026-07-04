@@ -791,6 +791,36 @@ navCookies.forEach(navCookie => {
   });
 });
 
+const trashZone = document.getElementById('trash-zone');
+if (trashZone) {
+  trashZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    trashZone.classList.add('drag-over');
+  });
+  trashZone.addEventListener('dragleave', () => {
+    trashZone.classList.remove('drag-over');
+  });
+  trashZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    trashZone.classList.remove('drag-over');
+    
+    const isMove = e.dataTransfer.getData('is-move') === 'true';
+    if (isMove) {
+      const oldQ = e.dataTransfer.getData('cookie-q');
+      const oldR = e.dataTransfer.getData('cookie-r');
+      const oldKey = `${oldQ},${oldR}`;
+      if (hexGrid.has(oldKey)) {
+        const oldNode = hexGrid.get(oldKey);
+        hexGrid.delete(oldKey);
+        oldNode.remove();
+        if (selectedCookie === oldNode) {
+          selectCookie(null);
+        }
+      }
+    }
+  });
+}
+
 canvasContainer.addEventListener('dragover', (e) => e.preventDefault());
 canvasContainer.addEventListener('drop', (e) => {
   e.preventDefault();
