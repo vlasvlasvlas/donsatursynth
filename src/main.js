@@ -60,8 +60,16 @@ const DRUM_POOL_SIZE = 1;
 
 function createDrumVoice(track) {
   if (track === 'kick') return new Tone.MembraneSynth().connect(drumBus);
-  if (track === 'snare') return new Tone.NoiseSynth().connect(drumBus);
-  return new Tone.MetalSynth().connect(drumBus);
+  if (track === 'snare') {
+    const s = new Tone.NoiseSynth().connect(drumBus);
+    s.volume.value = -15;
+    return s;
+  }
+  if (track === 'hihat') {
+    const h = new Tone.MetalSynth().connect(drumBus);
+    h.volume.value = -10;
+    return h;
+  }
 }
 
 const drumVoices = {
@@ -74,7 +82,7 @@ const drumVoiceCursor = { kick: 0, snare: 0, hihat: 0 };
 const drumKits = {
   '808': {
     kick: { pitchDecay: 0.05, octaves: 10, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4 } },
-    snare: { noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.2, sustain: 0 } },
+    snare: { noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.15, sustain: 0 } },
     hihat: { frequency: 200, envelope: { attack: 0.001, decay: 0.1, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5 }
   },
   '8bit': {
@@ -84,7 +92,7 @@ const drumKits = {
   },
   'electro': {
     kick: { pitchDecay: 0.1, octaves: 6, oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 } },
-    snare: { noise: { type: 'white' }, envelope: { attack: 0.005, decay: 0.05, sustain: 0 } },
+    snare: { noise: { type: 'white' }, envelope: { attack: 0.002, decay: 0.08, sustain: 0 } },
     hihat: { frequency: 300, envelope: { attack: 0.001, decay: 0.05, release: 0.01 }, harmonicity: 4, modulationIndex: 20, resonance: 3000, octaves: 1.5 }
   }
 };
