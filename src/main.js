@@ -16,8 +16,6 @@ const bpmVal = document.getElementById('bpm-val');
 const presetSelect = document.getElementById('preset-select');
 const rootNoteSelect = document.getElementById('root-note-select');
 const masterVolSlider = document.getElementById('master-vol-slider');
-const cookieVolSlider = document.getElementById('cookie-vol-slider');
-const beatVolSlider = document.getElementById('beat-vol-slider');
 const btnPlay = document.getElementById('btn-play');
 const directionSelect = document.getElementById('direction-select');
 const randomCountInput = document.getElementById('random-count');
@@ -39,22 +37,28 @@ let presets = [];
 let presetsLoadPromise = null;
 let selectedCookie = null;
 
-// Helper: slider dB value → audio param (-80 or lower = true silence)
+// Helper: slider dB value → audio param
 function sliderDb(rawValue) {
   const v = parseFloat(rawValue);
-  return v <= -79 ? -Infinity : v;
+  if (!Number.isFinite(v)) return -5;
+  return Math.max(-80, Math.min(0, v));
 }
 
-// Master FX chain: independent buses → Compressor → Reverb → Limiter → Destination
-const masterLimiter = new Tone.Limiter(-3).toDestination();
+// Master FX chain: source buses → Compressor → Reverb → Limiter → Mono → Destination
+const masterMono = new Tone.Mono().toDestination();
+const masterLimiter = new Tone.Limiter(-3).connect(masterMono);
 const masterReverb = new Tone.Reverb({ decay: 2.0, wet: 0.18 }).connect(masterLimiter);
 const masterCompressor = new Tone.Compressor(-24, 4).connect(masterReverb);
 
-// Independent volume buses — adjusting one never affects the others
-const cookieBus = new Tone.Volume(sliderDb(cookieVolSlider.value)).connect(masterCompressor);
-const drumBus = new Tone.Volume(sliderDb(beatVolSlider.value)).connect(masterCompressor);
+// Fixed internal balance only. The UI exposes a single master volume.
+const cookieBus = new Tone.Gain(1).connect(masterCompressor);
+const drumBus = new Tone.Gain(Tone.dbToGain(-10)).connect(masterCompressor);
 
 Tone.Destination.volume.value = sliderDb(masterVolSlider.value);
+
+function setMasterVolume(rawValue, rampTime = 0.08) {
+  Tone.Destination.volume.rampTo(sliderDb(rawValue), rampTime);
+}
 
 const DRUM_POOL_SIZE = 1;
 
@@ -423,13 +427,7 @@ bpmSlider.addEventListener('input', (e) => {
   Tone.Transport.bpm.value = bpm;
 });
 masterVolSlider.addEventListener('input', (e) => {
-  Tone.Destination.volume.value = sliderDb(e.target.value);
-});
-cookieVolSlider.addEventListener('input', (e) => {
-  cookieBus.volume.value = sliderDb(e.target.value);
-});
-beatVolSlider.addEventListener('input', (e) => {
-  drumBus.volume.value = sliderDb(e.target.value);
+  setMasterVolume(e.target.value);
 });
 rootNoteSelect.addEventListener('change', (e) => {
   rootNoteStr = e.target.value;
@@ -979,6 +977,7 @@ if (import.meta.hot) {
     masterCompressor.dispose();
     masterReverb.dispose();
     masterLimiter.dispose();
+    masterMono.dispose();
   });
 }
 

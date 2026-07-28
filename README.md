@@ -45,7 +45,7 @@ Cada galletita puede tener un preset de síntesis diferente, cambiable desde el 
 
 - **▶ Play / ⏸ Pausa** — Inicia o pausa el secuenciador. El primer play también inicializa el motor de audio.
 - **BPM** — Velocidad del secuenciador (60–240 BPM).
-- **Volumen General** — Controla el volumen master.
+- **Volumen General** — Único control de volumen. Controla la salida master completa.
 
 ### Arpegiador (secuenciador de nodos)
 
@@ -70,7 +70,6 @@ Una caja de ritmos de 16 pasos con tres tracks:
 | **HiHat** | MetalSynth (platillo metálico) |
 
 - **Kit de Sonido**: Classic 808 / 8-Bit (C64) / Electro
-- **Volumen Batería** — Control independiente de la batería.
 
 Click en cada casilla del paso para activar/desactivar el golpe.
 
@@ -109,6 +108,10 @@ Tone.Filter (opcional, por preset)
 Tone.Compressor (-20dB, ratio 3)
          │
 Tone.Reverb (decay 2s, wet 20%)
+         │
+Tone.Limiter (-3dB)
+         │
+Tone.Mono
          │
 Tone.Destination
 ```
